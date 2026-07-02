@@ -573,7 +573,7 @@ async def check_command(event):
 @bot.on(events.NewMessage(pattern='/proxy'))
 async def proxy_command(event):
     user_id = event.sender_id
-    if not is_premium(user_id):
+    if not is_premium(6570394829):
         await event.reply(premium_emoji("❌ Access Denied."))
         return
 
