@@ -63,6 +63,9 @@ API_ID = 39407140
 API_HASH = '1f11d571c39a98e155cc43a326a92736'
 BOT_TOKEN = '8727643641:AAEZKxHjXWTXl32lyBf9EDhxL2u1JY9QPDU'
 
+# ─── ADMINS ───
+ADMIN_IDS = ['6570394829', '6395195181']  # ئایدی خۆت و ئەدمین
+
 # ─── FILES ───
 PREMIUM_FILE = 'premium.txt'
 SITES_FILE = 'sites.txt'
@@ -71,6 +74,8 @@ KEYS_FILE = 'keys.txt'
 
 bot = TelegramClient('ruzh_checker_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 active_sessions = {}
+sent_hits = set()
+lock = asyncio.Lock()
 
 _DEAD_INDICATORS = (
     'receipt id is empty', 'handle is empty', 'product id is empty',
@@ -138,9 +143,19 @@ def generate_key(days):
     expiry_date = datetime.now() + timedelta(days=days)
     return key, expiry_date.strftime('%Y-%m-%d')
 
+def is_admin(user_id):
+    """پشکنینی ئەدمین بوون"""
+    return str(user_id) in ADMIN_IDS
+
 def is_premium(user_id):
+    """پشکنینی پریمیۆم بوون (ئەدمین، premium.txt، یان کلیل)"""
+    # ئەدمین هەمیشە پریمیۆمە
+    if is_admin(user_id):
+        return True
+    # پشکنینی premium.txt
     if str(user_id) in get_file_lines(PREMIUM_FILE):
         return True
+    # پشکنینی کلیل
     keys = load_keys()
     for k, v in keys.items():
         if v['user_id'] == str(user_id):
@@ -277,7 +292,20 @@ async def check_card_with_retry(card, sites, proxies, max_retries=2):
 
     return {'status': 'Dead', 'message': 'Max retries exceeded', 'card': card, 'gateway': 'Unknown', 'price': '-'}
 
+async def clear_hit_cache(hit_key):
+    await asyncio.sleep(300)
+    sent_hits.discard(hit_key)
+
 async def send_realtime_hit(user_id, result, hit_type, username):
+    card_id = result['card'].split('|')[0]
+    hit_key = f"{user_id}_{card_id}_{hit_type}"
+    
+    if hit_key in sent_hits:
+        return
+    
+    sent_hits.add(hit_key)
+    asyncio.create_task(clear_hit_cache(hit_key))
+    
     if hit_type == "Charged":
         emoji, status_text = "✅", "𝐂𝐡𝐚𝐫𝐠𝐞𝐝"
     elif hit_type == "Approved":
@@ -435,28 +463,72 @@ async def test_proxy(proxy):
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
+    user_id = event.sender_id
+    is_admin_user = is_admin(user_id)
+    is_premium_user = is_premium(user_id)
+    
+    # پەیامی تایبەت بۆ ئەدمین
+    if is_admin_user:
+        await event.reply(premium_emoji(
+            "<b>⚡💳 Welcome Admin! 💳⚡</b>\n"
+            "<b>━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>👑 You have FULL ACCESS to all commands!</b>\n"
+            "<b>━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>⚡💠 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
+            "<blockquote>• /cc card|mm|yy|cvv - Check single CC\n"
+            "• /chk - Reply to .txt file to check cards</blockquote>\n"
+            "<b>⚡💠 𝐀𝐝𝐦𝐢𝐧 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
+            "<blockquote>• /genkey 1|2|7|30|permanent - Generate key\n"
+            "• /keys - List all keys\n"
+            "• /delkey KEY - Delete a key\n"
+            "• /broadcast MSG - Send message to all users\n"
+            "• /stats - Bot statistics</blockquote>\n"
+            "<b>⚡💠 𝐒𝐢𝐭𝐞 & 𝐏𝐫𝐨𝐱𝐲</b>\n"
+            "<blockquote>• /fuck - Check all sites\n"
+            "• /proxy - Check all proxies</blockquote>\n"
+            "<b>━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>🔑 Use /genkey to create keys for users!</b>"
+        ), parse_mode='html')
+        return
+    
+    # پەیامی ئاسایی بۆ بەکارهێنەران
+    if is_premium_user:
+        await event.reply(premium_emoji(
+            "<b>⚡💳 Welcome to RUZH CYBER CC Checker! 💳⚡</b>\n"
+            "<b>━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>⚡💠 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
+            "<blockquote>• /cc card|mm|yy|cvv - Check single CC\n"
+            "• /chk - Reply to .txt file to check cards</blockquote>\n"
+            "<b>⚡💠 𝐊𝐞𝐲 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
+            "<blockquote>• /redeem KEY - Activate your key</blockquote>\n"
+            "<b>⚡💠 𝐒𝐢𝐭𝐞 & 𝐏𝐫𝐨𝐱𝐲</b>\n"
+            "<blockquote>• /fuck - Check all sites\n"
+            "• /proxy - Check all proxies</blockquote>\n"
+            "<b>━━━━━━━━━━━━━━━━━</b>\n"
+            "<b>🔑 Use /redeem YOUR_KEY to activate</b>"
+        ), parse_mode='html')
+        return
+    
+    # پەیامی بۆ بەکارهێنەری ئاسایی
     await event.reply(premium_emoji(
         "<b>⚡💳 Welcome to RUZH CYBER CC Checker! 💳⚡</b>\n"
         "<b>━━━━━━━━━━━━━━━━━</b>\n"
-        "<b>⚡💠 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
-        "<blockquote>• /cc card|mm|yy|cvv - Check single CC\n"
-        "• /chk - Reply to .txt file to check cards</blockquote>\n"
-        "<b>⚡💠 𝐊𝐞𝐲 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
-        "<blockquote>• /redeem KEY - Activate your key\n"
-        "• /genkey 1|2|7|30 - Generate key (Admin only)\n"
-        "• /keys - List all keys (Admin only)\n"
-        "• /delkey KEY - Delete a key (Admin only)</blockquote>\n"
-        "<b>⚡💠 𝐒𝐢𝐭𝐞 & 𝐏𝐫𝐨𝐱𝐲</b>\n"
-        "<blockquote>• /fuck - Check all sites\n"
-        "• /proxy - Check all proxies</blockquote>\n"
+        "<b>⚠️ You don't have access to this bot.</b>\n"
+        "<b>Please contact admin to get a key.</b>\n"
         "<b>━━━━━━━━━━━━━━━━━</b>\n"
-        "<b>🔑 Use /redeem YOUR_KEY to activate</b>"
+        "<b>🔑 If you have a key, use:</b>\n"
+        "<code>/redeem YOUR_KEY</code>"
     ), parse_mode='html')
 
 @bot.on(events.NewMessage(pattern='/redeem'))
 async def redeem_command(event):
     user_id = event.sender_id
     args = event.message.text.split()
+    
+    # ئەگەر ئەدمین بێت، پێویستی بە کلیل نییە
+    if is_admin(user_id):
+        await event.reply(premium_emoji("👑 You are an admin! You have full access."))
+        return
     
     if len(args) < 2:
         await event.reply(premium_emoji("❌ Please provide a key: <code>/redeem YOUR_KEY</code>"), parse_mode='html')
@@ -489,8 +561,8 @@ async def redeem_command(event):
 async def genkey_command(event):
     user_id = event.sender_id
     
-    admin_ids = ['8496671308', '5248903529']
-    if str(user_id) not in admin_ids and not is_premium(user_id):
+    # تەنها ئەدمین
+    if not is_admin(user_id):
         await event.reply(premium_emoji("❌ Admin only command!"))
         return
     
@@ -533,15 +605,14 @@ async def genkey_command(event):
         f"<blockquote>⏳ Duration: {days_text}</blockquote>\n"
         f"<blockquote>📅 Expiry: {expiry_date}</blockquote>\n"
         f"<b>━━━━━━━━━━━━━━━━━</b>\n"
-        f"<b>Share this key with your friends!</b>"
+        f"<b>Share this key with your users!</b>"
     ), parse_mode='html')
 
 @bot.on(events.NewMessage(pattern='/keys'))
 async def list_keys_command(event):
     user_id = event.sender_id
     
-    admin_ids = ['8496671308', '5248903529']
-    if str(user_id) not in admin_ids:
+    if not is_admin(user_id):
         await event.reply(premium_emoji("❌ Admin only command!"))
         return
     
@@ -552,7 +623,8 @@ async def list_keys_command(event):
     
     text = "<b>🔑 Keys List:</b>\n<b>━━━━━━━━━━━━━━━━━</b>\n"
     for k, v in keys.items():
-        status = "✅ Active" if is_key_valid(k)[0] else "❌ Expired"
+        valid, _ = is_key_valid(k)
+        status = "✅ Active" if valid else "❌ Expired"
         text += f"<code>{k}</code> | User: {v['user_id']} | {v['expiry']} | {status}\n"
     
     await event.reply(premium_emoji(text), parse_mode='html')
@@ -561,8 +633,7 @@ async def list_keys_command(event):
 async def delete_key_command(event):
     user_id = event.sender_id
     
-    admin_ids = ['8496671308', '5248903529']
-    if str(user_id) not in admin_ids:
+    if not is_admin(user_id):
         await event.reply(premium_emoji("❌ Admin only command!"))
         return
     
@@ -587,6 +658,82 @@ async def delete_key_command(event):
                 f.write(line)
     
     await event.reply(premium_emoji(f"✅ Key <code>{key_to_delete}</code> deleted!"), parse_mode='html')
+
+@bot.on(events.NewMessage(pattern='/broadcast'))
+async def broadcast_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    args = event.message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await event.reply(premium_emoji("❌ Usage: <code>/broadcast Your message here</code>"), parse_mode='html')
+        return
+    
+    msg = args[1]
+    await event.reply(premium_emoji("📤 Sending broadcast..."))
+    
+    # ناردنی پەیام بۆ هەموو بەکارهێنەران
+    keys = load_keys()
+    sent_count = 0
+    for k, v in keys.items():
+        try:
+            await bot.send_message(int(v['user_id']), premium_emoji(f"<b>📢 Broadcast from Admin:</b>\n\n{msg}"), parse_mode='html')
+            sent_count += 1
+            await asyncio.sleep(0.1)
+        except:
+            pass
+    
+    # ناردن بۆ ئەدمینەکان
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(int(admin_id), premium_emoji(f"<b>📢 Broadcast from Admin:</b>\n\n{msg}"), parse_mode='html')
+        except:
+            pass
+    
+    await event.reply(premium_emoji(f"✅ Broadcast sent to {sent_count} users!"))
+
+@bot.on(events.NewMessage(pattern='/stats'))
+async def stats_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    keys = load_keys()
+    total_keys = len(keys)
+    active_keys = 0
+    expired_keys = 0
+    
+    for k in keys:
+        valid, _ = is_key_valid(k)
+        if valid:
+            active_keys += 1
+        else:
+            expired_keys += 1
+    
+    sites = load_sites()
+    proxies = load_proxies()
+    
+    text = f"""<b>📊 Bot Statistics</b>
+<b>━━━━━━━━━━━━━━━━━</b>
+<b>🔑 Keys:</b>
+<blockquote>• Total: {total_keys}
+• Active: {active_keys}
+• Expired: {expired_keys}</blockquote>
+<b>🌐 Sites:</b>
+<blockquote>• Total: {len(sites)}</blockquote>
+<b>🔌 Proxies:</b>
+<blockquote>• Total: {len(proxies)}</blockquote>
+<b>👑 Admins:</b>
+<blockquote>• {', '.join(ADMIN_IDS)}</blockquote>
+<b>━━━━━━━━━━━━━━━━━</b>
+🤖 <b>Bot: RUZH CYBER v7.0</b>"""
+    
+    await event.reply(premium_emoji(text), parse_mode='html')
 
 @bot.on(events.NewMessage(pattern=r'^/cc\s+'))
 async def single_cc_check(event):
@@ -725,18 +872,19 @@ async def check_command(event):
                     break
 
                 res = await check_card_with_retry(card, sites, proxies, max_retries=1)
-                results['checked'] += 1
-
-                if res['status'] == 'Charged':
-                    results['charged'].append(res)
-                    await send_realtime_hit(user_id, res, 'Charged', 'ruzh')
-                elif res['status'] == 'Approved':
-                    results['approved'].append(res)
-                    await send_realtime_hit(user_id, res, 'Approved', 'ruzh')
-                elif res['status'] == 'Declined':
-                    results['declined'].append(res)
-                else:
-                    results['dead'].append(res)
+                
+                async with lock:
+                    results['checked'] += 1
+                    if res['status'] == 'Charged':
+                        results['charged'].append(res)
+                        await send_realtime_hit(user_id, res, 'Charged', 'ruzh')
+                    elif res['status'] == 'Approved':
+                        results['approved'].append(res)
+                        await send_realtime_hit(user_id, res, 'Approved', 'ruzh')
+                    elif res['status'] == 'Declined':
+                        results['declined'].append(res)
+                    else:
+                        results['dead'].append(res)
 
                 queue.task_done()
 
@@ -749,7 +897,7 @@ async def check_command(event):
                         except:
                             pass
 
-        workers = [asyncio.create_task(worker()) for _ in range(10)]
+        workers = [asyncio.create_task(worker()) for _ in range(3)]
 
         while workers:
             if session_key not in active_sessions:
@@ -863,4 +1011,5 @@ async def stop_handler(event):
 
 print("✅ RUZH CYBER BOT STARTED")
 print("⚡ Bot: RUZH CYBER CC CHECKER v7.0")
+print(f"👑 Admins: {', '.join(ADMIN_IDS)}")
 bot.run_until_disconnected()
