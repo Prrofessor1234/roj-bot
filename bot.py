@@ -11,9 +11,9 @@ import secrets
 from datetime import datetime, timedelta
 
 # ================================================================
-# RUZH CYBER - CC CHECKER BOT v7.0
+# RUZH CYBER - CC CHECKER BOT v8.0
 # AUTHOR: RUZH CYBER
-# STATUS: ELITE EDITION WITH REDEEM SYSTEM
+# STATUS: ELITE EDITION WITH FULL MANAGEMENT
 # ================================================================
 
 # ─── CONFIG ───
@@ -43,6 +43,8 @@ PREMIUM_EMOJI_IDS = {
     "⚠️": "5420323339723881652",
     "💎": "6023660820544623088",
     "🔑": "6026367225466720832",
+    "👤": "5971837723676249096",
+    "📌": "5974235702701853774",
 }
 
 def premium_emoji(text):
@@ -64,13 +66,15 @@ API_HASH = '1f11d571c39a98e155cc43a326a92736'
 BOT_TOKEN = '8727643641:AAEZKxHjXWTXl32lyBf9EDhxL2u1JY9QPDU'
 
 # ─── ADMINS ───
-ADMIN_IDS = ['6570394829', '6395195181']  # ئایدی خۆت و ئەدمین
+ADMIN_IDS = ['6570394829', '6395195181']
 
 # ─── FILES ───
 PREMIUM_FILE = 'premium.txt'
 SITES_FILE = 'sites.txt'
 PROXY_FILE = 'proxy.txt'
 KEYS_FILE = 'keys.txt'
+BANNED_FILE = 'banned.txt'
+USERS_FILE = 'users.txt'
 
 bot = TelegramClient('ruzh_checker_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 active_sessions = {}
@@ -97,6 +101,61 @@ _DEAD_INDICATORS = (
     'site dead', 'captcha_required', 'captcha required', 'site errors', 'failed',
     'all products sold out', 'no_session_token', 'tokenize_fail',
 )
+
+# ─── BANNED SYSTEM ───
+
+def load_banned():
+    if not os.path.exists(BANNED_FILE):
+        return []
+    try:
+        with open(BANNED_FILE, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except:
+        return []
+
+def is_banned(user_id):
+    return str(user_id) in load_banned()
+
+def ban_user(user_id):
+    with open(BANNED_FILE, 'a', encoding='utf-8') as f:
+        f.write(f"{user_id}\n")
+
+def unban_user(user_id):
+    banned = load_banned()
+    if str(user_id) in banned:
+        banned.remove(str(user_id))
+        with open(BANNED_FILE, 'w', encoding='utf-8') as f:
+            for u in banned:
+                f.write(f"{u}\n")
+
+# ─── USERS SYSTEM ───
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return {}
+    try:
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data
+    except:
+        return {}
+
+def save_user(user_id, username):
+    users = load_users()
+    users[str(user_id)] = {
+        'username': username,
+        'first_seen': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'last_seen': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    with open(USERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(users, f, indent=2)
+
+def update_user_last_seen(user_id):
+    users = load_users()
+    if str(user_id) in users:
+        users[str(user_id)]['last_seen'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=2)
 
 # ─── KEY SYSTEM ───
 
@@ -144,18 +203,16 @@ def generate_key(days):
     return key, expiry_date.strftime('%Y-%m-%d')
 
 def is_admin(user_id):
-    """پشکنینی ئەدمین بوون"""
     return str(user_id) in ADMIN_IDS
 
 def is_premium(user_id):
-    """پشکنینی پریمیۆم بوون (ئەدمین، premium.txt، یان کلیل)"""
-    # ئەدمین هەمیشە پریمیۆمە
+    # ئەگەر باند کرابوو
+    if is_banned(user_id):
+        return False
     if is_admin(user_id):
         return True
-    # پشکنینی premium.txt
     if str(user_id) in get_file_lines(PREMIUM_FILE):
         return True
-    # پشکنینی کلیل
     keys = load_keys()
     for k, v in keys.items():
         if v['user_id'] == str(user_id):
@@ -464,34 +521,51 @@ async def test_proxy(proxy):
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     user_id = event.sender_id
+    username = event.sender.username or "No username"
+    
+    # تۆمارکردنی بەکارهێنەر
+    save_user(user_id, username)
+    update_user_last_seen(user_id)
+    
+    # پشکنینی باند بوون
+    if is_banned(user_id):
+        await event.reply(premium_emoji(
+            "<b>🚫 You have been BANNED from this bot!</b>\n"
+            "<b>Contact admin for more information.</b>"
+        ), parse_mode='html')
+        return
+    
     is_admin_user = is_admin(user_id)
     is_premium_user = is_premium(user_id)
     
-    # پەیامی تایبەت بۆ ئەدمین
     if is_admin_user:
         await event.reply(premium_emoji(
             "<b>⚡💳 Welcome Admin! 💳⚡</b>\n"
             "<b>━━━━━━━━━━━━━━━━━</b>\n"
             "<b>👑 You have FULL ACCESS to all commands!</b>\n"
             "<b>━━━━━━━━━━━━━━━━━</b>\n"
-            "<b>⚡💠 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
+            "<b>⚡💠 𝐔𝐬𝐞𝐫 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
             "<blockquote>• /cc card|mm|yy|cvv - Check single CC\n"
             "• /chk - Reply to .txt file to check cards</blockquote>\n"
             "<b>⚡💠 𝐀𝐝𝐦𝐢𝐧 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬</b>\n"
-            "<blockquote>• /genkey 1|2|7|30|permanent - Generate key\n"
+            "<blockquote>• /genkey 7 - Generate key\n"
+            "• /genkey 7 5248903529 - Generate key for user\n"
             "• /keys - List all keys\n"
             "• /delkey KEY - Delete a key\n"
+            "• /users - List all users\n"
+            "• /ban 5248903529 - Ban user\n"
+            "• /unban 5248903529 - Unban user\n"
+            "• /banned - List banned users\n"
             "• /broadcast MSG - Send message to all users\n"
             "• /stats - Bot statistics</blockquote>\n"
             "<b>⚡💠 𝐒𝐢𝐭𝐞 & 𝐏𝐫𝐨𝐱𝐲</b>\n"
             "<blockquote>• /fuck - Check all sites\n"
             "• /proxy - Check all proxies</blockquote>\n"
             "<b>━━━━━━━━━━━━━━━━━</b>\n"
-            "<b>🔑 Use /genkey to create keys for users!</b>"
+            f"<b>👤 Your ID: {user_id}</b>"
         ), parse_mode='html')
         return
     
-    # پەیامی ئاسایی بۆ بەکارهێنەران
     if is_premium_user:
         await event.reply(premium_emoji(
             "<b>⚡💳 Welcome to RUZH CYBER CC Checker! 💳⚡</b>\n"
@@ -505,11 +579,10 @@ async def start(event):
             "<blockquote>• /fuck - Check all sites\n"
             "• /proxy - Check all proxies</blockquote>\n"
             "<b>━━━━━━━━━━━━━━━━━</b>\n"
-            "<b>🔑 Use /redeem YOUR_KEY to activate</b>"
+            f"<b>👤 Your ID: {user_id}</b>"
         ), parse_mode='html')
         return
     
-    # پەیامی بۆ بەکارهێنەری ئاسایی
     await event.reply(premium_emoji(
         "<b>⚡💳 Welcome to RUZH CYBER CC Checker! 💳⚡</b>\n"
         "<b>━━━━━━━━━━━━━━━━━</b>\n"
@@ -523,12 +596,20 @@ async def start(event):
 @bot.on(events.NewMessage(pattern='/redeem'))
 async def redeem_command(event):
     user_id = event.sender_id
-    args = event.message.text.split()
+    username = event.sender.username or "No username"
     
-    # ئەگەر ئەدمین بێت، پێویستی بە کلیل نییە
+    # تۆمارکردنی بەکارهێنەر
+    save_user(user_id, username)
+    
+    if is_banned(user_id):
+        await event.reply(premium_emoji("🚫 You are banned!"))
+        return
+    
     if is_admin(user_id):
         await event.reply(premium_emoji("👑 You are an admin! You have full access."))
         return
+    
+    args = event.message.text.split()
     
     if len(args) < 2:
         await event.reply(premium_emoji("❌ Please provide a key: <code>/redeem YOUR_KEY</code>"), parse_mode='html')
@@ -541,27 +622,29 @@ async def redeem_command(event):
         await event.reply(premium_emoji("❌ Invalid or expired key!"))
         return
     
-    if key_user_id and str(key_user_id) != str(user_id):
-        await event.reply(premium_emoji("❌ This key belongs to another user!"))
+    # 🔥 چارەسەری کێشە: کلیل بۆ ئەو بەکارهێنەرە دروست کراوە
+    # پێویست نییە چەک بکەین، تەنها پشکنینی کلیل
+    if key_user_id:
+        # ئەگەر کلیل بۆ ئەم بەکارهێنەرە دروست کراوە، ڕێگەی پێبدە
+        keys = load_keys()
+        expiry = keys[key]['expiry']
+        days_left = "Permanent" if expiry == 'permanent' else f"{ (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days } days left"
+        
+        await event.reply(premium_emoji(
+            f"<b>✅ Key activated successfully!</b>\n"
+            f"<blockquote>🔑 Key: <code>{key}</code></blockquote>\n"
+            f"<blockquote>⏳ Expiry: {days_left}</blockquote>\n"
+            f"<b>━━━━━━━━━━━━━━━━━</b>\n"
+            f"<b>⚡ You can now use all bot commands!</b>"
+        ), parse_mode='html')
         return
     
-    keys = load_keys()
-    expiry = keys[key]['expiry']
-    days_left = "Permanent" if expiry == 'permanent' else f"{ (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days } days left"
-    
-    await event.reply(premium_emoji(
-        f"<b>✅ Key activated successfully!</b>\n"
-        f"<blockquote>🔑 Key: <code>{key}</code></blockquote>\n"
-        f"<blockquote>⏳ Expiry: {days_left}</blockquote>\n"
-        f"<b>━━━━━━━━━━━━━━━━━</b>\n"
-        f"<b>⚡ You can now use all bot commands!</b>"
-    ), parse_mode='html')
+    await event.reply(premium_emoji("❌ Invalid key!"))
 
 @bot.on(events.NewMessage(pattern='/genkey'))
 async def genkey_command(event):
     user_id = event.sender_id
     
-    # تەنها ئەدمین
     if not is_admin(user_id):
         await event.reply(premium_emoji("❌ Admin only command!"))
         return
@@ -570,15 +653,18 @@ async def genkey_command(event):
     if len(args) < 2:
         await event.reply(premium_emoji(
             "❌ Usage:\n"
-            "<code>/genkey 1</code> - 1 day key\n"
-            "<code>/genkey 2</code> - 2 days key\n"
-            "<code>/genkey 7</code> - 7 days key\n"
-            "<code>/genkey 30</code> - 30 days key\n"
+            "<code>/genkey 7</code> - For yourself\n"
+            "<code>/genkey 7 5248903529</code> - For user\n"
             "<code>/genkey permanent</code> - Permanent key"
         ), parse_mode='html')
         return
     
+    target_user_id = str(user_id)
     days_arg = args[1]
+    
+    if len(args) >= 3:
+        target_user_id = args[2]
+    
     if days_arg.lower() == 'permanent':
         days = 36500
         expiry_text = 'permanent'
@@ -596,16 +682,17 @@ async def genkey_command(event):
     if days_arg.lower() == 'permanent':
         expiry_date = 'permanent'
     
-    save_key(key, str(user_id), expiry_date)
+    save_key(key, target_user_id, expiry_date)
     
     days_text = "Permanent" if expiry_date == 'permanent' else f"{days} days"
     await event.reply(premium_emoji(
         f"<b>✅ Key generated successfully!</b>\n"
         f"<blockquote>🔑 Key: <code>{key}</code></blockquote>\n"
+        f"<blockquote>👤 User ID: {target_user_id}</blockquote>\n"
         f"<blockquote>⏳ Duration: {days_text}</blockquote>\n"
         f"<blockquote>📅 Expiry: {expiry_date}</blockquote>\n"
         f"<b>━━━━━━━━━━━━━━━━━</b>\n"
-        f"<b>Share this key with your users!</b>"
+        f"<b>Share this key with your user!</b>"
     ), parse_mode='html')
 
 @bot.on(events.NewMessage(pattern='/keys'))
@@ -659,6 +746,98 @@ async def delete_key_command(event):
     
     await event.reply(premium_emoji(f"✅ Key <code>{key_to_delete}</code> deleted!"), parse_mode='html')
 
+@bot.on(events.NewMessage(pattern='/users'))
+async def list_users_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    users = load_users()
+    if not users:
+        await event.reply(premium_emoji("📭 No users found."))
+        return
+    
+    text = "<b>👤 Users List:</b>\n<b>━━━━━━━━━━━━━━━━━</b>\n"
+    for uid, data in users.items():
+        username = data.get('username', 'No username')
+        first_seen = data.get('first_seen', 'Unknown')
+        last_seen = data.get('last_seen', 'Unknown')
+        # پشکنینی ئەگەر باند کرابوو
+        banned = "🚫" if is_banned(uid) else "✅"
+        text += f"{banned} <code>{uid}</code> | @{username}\n"
+        text += f"   📅 {first_seen}\n"
+    
+    await event.reply(premium_emoji(text), parse_mode='html')
+
+@bot.on(events.NewMessage(pattern='/ban'))
+async def ban_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    args = event.message.text.split()
+    if len(args) < 2:
+        await event.reply(premium_emoji("❌ Usage: <code>/ban USER_ID</code>"), parse_mode='html')
+        return
+    
+    target_id = args[1]
+    if target_id in ADMIN_IDS:
+        await event.reply(premium_emoji("❌ Cannot ban an admin!"))
+        return
+    
+    if is_banned(target_id):
+        await event.reply(premium_emoji(f"⚠️ User <code>{target_id}</code> is already banned!"), parse_mode='html')
+        return
+    
+    ban_user(target_id)
+    await event.reply(premium_emoji(f"✅ User <code>{target_id}</code> has been banned!"), parse_mode='html')
+
+@bot.on(events.NewMessage(pattern='/unban'))
+async def unban_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    args = event.message.text.split()
+    if len(args) < 2:
+        await event.reply(premium_emoji("❌ Usage: <code>/unban USER_ID</code>"), parse_mode='html')
+        return
+    
+    target_id = args[1]
+    if not is_banned(target_id):
+        await event.reply(premium_emoji(f"⚠️ User <code>{target_id}</code> is not banned!"), parse_mode='html')
+        return
+    
+    unban_user(target_id)
+    await event.reply(premium_emoji(f"✅ User <code>{target_id}</code> has been unbanned!"), parse_mode='html')
+
+@bot.on(events.NewMessage(pattern='/banned'))
+async def list_banned_command(event):
+    user_id = event.sender_id
+    
+    if not is_admin(user_id):
+        await event.reply(premium_emoji("❌ Admin only command!"))
+        return
+    
+    banned = load_banned()
+    if not banned:
+        await event.reply(premium_emoji("📭 No banned users."))
+        return
+    
+    text = "<b>🚫 Banned Users:</b>\n<b>━━━━━━━━━━━━━━━━━</b>\n"
+    for uid in banned:
+        users = load_users()
+        username = users.get(uid, {}).get('username', 'Unknown')
+        text += f"• <code>{uid}</code> | @{username}\n"
+    
+    await event.reply(premium_emoji(text), parse_mode='html')
+
 @bot.on(events.NewMessage(pattern='/broadcast'))
 async def broadcast_command(event):
     user_id = event.sender_id
@@ -673,14 +852,16 @@ async def broadcast_command(event):
         return
     
     msg = args[1]
-    await event.reply(premium_emoji("📤 Sending broadcast..."))
+    status_msg = await event.reply(premium_emoji("📤 Sending broadcast..."))
     
-    # ناردنی پەیام بۆ هەموو بەکارهێنەران
-    keys = load_keys()
+    users = load_users()
     sent_count = 0
-    for k, v in keys.items():
+    for uid, data in users.items():
         try:
-            await bot.send_message(int(v['user_id']), premium_emoji(f"<b>📢 Broadcast from Admin:</b>\n\n{msg}"), parse_mode='html')
+            # نەناردن بۆ بەکارهێنەرانی باند
+            if is_banned(uid):
+                continue
+            await bot.send_message(int(uid), premium_emoji(f"<b>📢 Broadcast from Admin:</b>\n\n{msg}"), parse_mode='html')
             sent_count += 1
             await asyncio.sleep(0.1)
         except:
@@ -693,7 +874,7 @@ async def broadcast_command(event):
         except:
             pass
     
-    await event.reply(premium_emoji(f"✅ Broadcast sent to {sent_count} users!"))
+    await status_msg.edit(premium_emoji(f"✅ Broadcast sent to {sent_count} users!"))
 
 @bot.on(events.NewMessage(pattern='/stats'))
 async def stats_command(event):
@@ -717,9 +898,14 @@ async def stats_command(event):
     
     sites = load_sites()
     proxies = load_proxies()
+    users = load_users()
+    banned = load_banned()
     
     text = f"""<b>📊 Bot Statistics</b>
 <b>━━━━━━━━━━━━━━━━━</b>
+<b>👤 Users:</b>
+<blockquote>• Total: {len(users)}
+• Banned: {len(banned)}</blockquote>
 <b>🔑 Keys:</b>
 <blockquote>• Total: {total_keys}
 • Active: {active_keys}
@@ -731,13 +917,18 @@ async def stats_command(event):
 <b>👑 Admins:</b>
 <blockquote>• {', '.join(ADMIN_IDS)}</blockquote>
 <b>━━━━━━━━━━━━━━━━━</b>
-🤖 <b>Bot: RUZH CYBER v7.0</b>"""
+🤖 <b>Bot: RUZH CYBER v8.0</b>"""
     
     await event.reply(premium_emoji(text), parse_mode='html')
 
 @bot.on(events.NewMessage(pattern=r'^/cc\s+'))
 async def single_cc_check(event):
     user_id = event.sender_id
+    
+    if is_banned(user_id):
+        await event.reply(premium_emoji("🚫 You are banned!"))
+        return
+    
     if not is_premium(user_id):
         await event.reply(premium_emoji("❌ Access Denied. Please redeem a key using /redeem KEY"), parse_mode='html')
         return
@@ -745,7 +936,7 @@ async def single_cc_check(event):
     sites = load_sites()
     proxies = load_proxies()
     if not sites or not proxies:
-        await event.reply(premium_emoji("❌ No sites or proxies available."), parse_mode='html')
+        await event.reply(premium_emoji("❌ No sites or proxies available. Please add sites to sites.txt and proxies to proxy.txt"), parse_mode='html')
         return
 
     cc_input = event.message.text.split(' ', 1)[1].strip()
@@ -793,6 +984,11 @@ Country: {country} {flag}</pre>
 @bot.on(events.NewMessage(pattern='/chk'))
 async def check_command(event):
     user_id = event.sender_id
+    
+    if is_banned(user_id):
+        await event.reply(premium_emoji("🚫 You are banned!"))
+        return
+    
     if not is_premium(user_id):
         await event.reply(premium_emoji("❌ Access Denied. Please redeem a key using /redeem KEY"))
         return
@@ -807,7 +1003,7 @@ async def check_command(event):
         return
 
     if not load_sites() or not load_proxies():
-        await event.reply(premium_emoji("❌ No sites or proxies available."))
+        await event.reply(premium_emoji("❌ No sites or proxies available. Please add sites to sites.txt and proxies to proxy.txt"))
         return
 
     status_msg = await event.reply(premium_emoji("🔄 Processing file..."))
@@ -928,13 +1124,18 @@ async def check_command(event):
 @bot.on(events.NewMessage(pattern='/proxy'))
 async def proxy_command(event):
     user_id = event.sender_id
+    
+    if is_banned(user_id):
+        await event.reply(premium_emoji("🚫 You are banned!"))
+        return
+    
     if not is_premium(user_id):
         await event.reply(premium_emoji("❌ Access Denied."))
         return
 
     proxies = load_proxies()
     if not proxies:
-        await event.reply(premium_emoji("❌ No proxies."))
+        await event.reply(premium_emoji("❌ No proxies in proxy.txt. Please add proxies."))
         return
 
     status_msg = await event.reply(premium_emoji(f"🔥 Checking {len(proxies)} proxies..."))
@@ -956,6 +1157,11 @@ async def proxy_command(event):
 @bot.on(events.NewMessage(pattern='/fuck'))
 async def site_command(event):
     user_id = event.sender_id
+    
+    if is_banned(user_id):
+        await event.reply(premium_emoji("🚫 You are banned!"))
+        return
+    
     if not is_premium(user_id):
         await event.reply(premium_emoji("❌ Access Denied."))
         return
@@ -963,7 +1169,7 @@ async def site_command(event):
     sites = load_sites()
     proxies = load_proxies()
     if not sites or not proxies:
-        await event.reply(premium_emoji("❌ No sites or proxies."))
+        await event.reply(premium_emoji("❌ No sites or proxies. Please add sites to sites.txt and proxies to proxy.txt"))
         return
 
     status_msg = await event.reply(premium_emoji(f"🔥 Checking {len(sites)} sites..."))
@@ -1010,6 +1216,6 @@ async def stop_handler(event):
 # ─── RUN ───
 
 print("✅ RUZH CYBER BOT STARTED")
-print("⚡ Bot: RUZH CYBER CC CHECKER v7.0")
+print("⚡ Bot: RUZH CYBER CC CHECKER v8.0")
 print(f"👑 Admins: {', '.join(ADMIN_IDS)}")
 bot.run_until_disconnected()
