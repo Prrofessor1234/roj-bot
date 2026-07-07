@@ -681,4 +681,4 @@ async def check_command(event):
                 if not state:
                     break
                 while state.get('paused', False):
-                    await asyncio.sleep
+                    await asyncio.sleep(1)
