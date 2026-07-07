@@ -1,3 +1,1 @@
-95.135.134.14:20946:EES0fz7f:QHW8qwpS
-ca-mon.pvdata.host:8080:g2rTXpNfPdcw2fzGtWKp62yH:nizar1elad2
-px950403.pointtoserver.com:10780:purevpn0s11832445:w5j6dhr5
+IP:Port:Username:Password
